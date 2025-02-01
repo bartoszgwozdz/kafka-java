@@ -25,13 +25,18 @@ public class Main {
             //read message_size
             inputStream.readNBytes(4);
             //read request api key & version
-            inputStream.readNBytes(4);
+            byte[] apiKeyBytes = inputStream.readNBytes(2);
+            byte[] apiVersionBytes = inputStream.readNBytes(2);
+            String apiVersion = new String(apiVersionBytes);
             byte[] correlationIdBytes  = inputStream.readNBytes(4);
 //            inputStream.readNBytes(correlationIdBytes,7,4);
 
             OutputStream outputStream = clientSocket.getOutputStream();
             outputStream.write(new byte[]{0, 1, 2, 3});
             outputStream.write(correlationIdBytes);
+            if(!apiVersion.equals("4")) {
+                outputStream.write(new byte[]{0,35});
+            }
 //            outputStream.flush();
 
         } catch (IOException e) {
