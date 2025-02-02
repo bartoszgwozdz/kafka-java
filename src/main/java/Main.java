@@ -1,6 +1,7 @@
 import java.io.*;
 import java.net.ServerSocket;
 import java.net.Socket;
+import java.nio.ByteBuffer;
 import java.util.Optional;
 
 public class Main {
@@ -21,23 +22,54 @@ public class Main {
             serverSocket.setReuseAddress(true);
             // Wait for connection from client.
             clientSocket = serverSocket.accept();
-            InputStream inputStream = clientSocket.getInputStream();
-            //read message_size
-            inputStream.readNBytes(4);
-            //read request api key & version
-            byte[] apiKeyBytes = inputStream.readNBytes(2);
-            byte[] apiVersionBytes = inputStream.readNBytes(2);
-            String apiVersion = new String(apiVersionBytes);
-            byte[] correlationIdBytes  = inputStream.readNBytes(4);
-//            inputStream.readNBytes(correlationIdBytes,7,4);
 
-            OutputStream outputStream = clientSocket.getOutputStream();
-            outputStream.write(new byte[]{0, 1, 2, 3});
-            outputStream.write(correlationIdBytes);
-            if(!apiVersion.equals("4")) {
-                outputStream.write(new byte[]{0,35});
+            // Get input stream
+            InputStream reader = clientSocket.getInputStream();
+            //Get output stream
+            OutputStream writer = clientSocket.getOutputStream();
+
+            //read message_size
+            reader.readNBytes(4);
+            //read request api key & version
+            var apiKeyBytes = reader.readNBytes(2);
+            var apiVersionBytes = reader.readNBytes(2);
+            var apiVersion = ByteBuffer.wrap(apiVersionBytes).getShort();
+            var correlationIdBytes  = reader.readNBytes(4);
+
+            ByteArrayOutputStream bos = new ByteArrayOutputStream();
+
+            //Write header
+            //write correlation
+            bos.write(correlationIdBytes);
+            //write error_code
+            if(apiVersion < 0 || apiVersion > 4) {
+                bos.write(new byte[]{0,35});
+            } else {
+                // error code 16bit
+                //    api_key => INT16
+                //    min_version => INT16
+                //    max_version => INT16
+                //  throttle_time_ms => INT32
+                bos.write(new byte[] {0, 0});       // error code
+                bos.write(2);                       // array size + 1
+                bos.write(new byte[] {0, 18});      // api_key
+                bos.write(new byte[] {0, 3});       // min version
+                bos.write(new byte[] {0, 4});       // max version
+                bos.write(0);                       // tagged fields
+                bos.write(new byte[] {0, 0, 0, 0}); // throttle time
+                // All requests and responses will end with a tagged field buffer.  If
+                // there are no tagged fields, this will only be a single zero byte.
+                bos.write(0); // tagged fields
             }
-//            outputStream.flush();
+
+            var size = bos.size();
+            var response = bos.toByteArray();
+            var sizeBytes = ByteBuffer.allocate(4).putInt(size).array();
+
+            writer.write(sizeBytes);
+            writer.write(response);
+            writer.flush();
+
 
         } catch (IOException e) {
             System.out.println("IOException: " + e.getMessage());
